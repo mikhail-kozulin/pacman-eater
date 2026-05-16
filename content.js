@@ -3,8 +3,9 @@
   window.__pacmanEaterRunning = true;
 
   const BASE_RADIUS = 12;        // меньше старт (было 20)
-  const SPEED = 4.0;
-  const BOT_SPEED = 3.0;
+  const SPEED = 8.0;             // ×2 в СОЛО (в паре остаётся 4.0)
+  const PAIR_SPEED = 4.0;        // парный режим — спокойнее, обоим игрокам
+  const BOT_SPEED = 6.0;         // AI-бот ×2 в соло (было 3.0)
   const CAT_SPEED = 4.5;         // в ~3 раза быстрее (хаоса больше)
   const SCAN_INTERVAL = 250;
   const GAME_DURATION = 120_000;
@@ -283,8 +284,9 @@
     if (keys['down']) dy += 1;
     if (dx || dy) {
       const len = Math.hypot(dx, dy);
-      player.dx = (dx / len) * SPEED;
-      player.dy = (dy / len) * SPEED;
+      const sp = (currentMode === 'pair') ? PAIR_SPEED : SPEED;
+      player.dx = (dx / len) * sp;
+      player.dy = (dy / len) * sp;
       player.angle = Math.atan2(player.dy, player.dx);
     } else { player.dx = 0; player.dy = 0; }
     player.x = clamp(player.x + player.dx, player.radius, bgCanvas.width - player.radius);
@@ -302,8 +304,9 @@
       if (keys2['down']) dy += 1;
       if (dx || dy) {
         const len = Math.hypot(dx, dy);
-        bot.dx = (dx / len) * SPEED;
-        bot.dy = (dy / len) * SPEED;
+        // Bot тут — это P2 в парном режиме, использует PAIR_SPEED
+        bot.dx = (dx / len) * PAIR_SPEED;
+        bot.dy = (dy / len) * PAIR_SPEED;
         bot.angle = Math.atan2(bot.dy, bot.dx);
       } else { bot.dx = 0; bot.dy = 0; }
       bot.mouth = (bot.mouth + 0.2) % (Math.PI * 2);
@@ -387,18 +390,15 @@
         const dx = px - r, dy = py - r;
         if (dx*dx + dy*dy > r*r) continue;
         const i = (py * w + px) * 4;
-        // Маркер «уже съедено» — alpha=254 (визуально не отличить от 255).
-        // Незатронутые пиксели скриншота имеют alpha=255.
-        const alreadyEaten = data[i+3] < 255;
-        if (!alreadyEaten) {
-          const R = data[i], G = data[i+1], B = data[i+2];
-          const d = 1 - (R + G + B) / (3 * 255);
-          const points = d < 0.3 ? d * 1 : d * 3;
-          gained += points;
-          pixelsEaten++;
-        }
-        // TV-шум: чёрный фон + редкие цветные точки (как старый телек)
-        // Перерандомизируем КАЖДЫЙ кадр — снег «двигается» под пакманом.
+        // Маркер «уже съедено» — alpha=254. Уже съеденные ПРОПУСКАЕМ
+        // (раньше перерандомизировали → перф квадратично с радиусом).
+        if (data[i+3] < 255) continue;
+        const R = data[i], G = data[i+1], B = data[i+2];
+        const d = 1 - (R + G + B) / (3 * 255);
+        const points = d < 0.3 ? d * 1 : d * 3;
+        gained += points;
+        pixelsEaten++;
+        // TV-шум: чёрный фон + редкие цветные точки
         const noise = Math.random();
         if (noise < 0.72)      { data[i] = 0;   data[i+1] = 0;   data[i+2] = 0; }
         else if (noise < 0.82) { data[i] = 230; data[i+1] = 230; data[i+2] = 230; }
@@ -408,8 +408,8 @@
         data[i+3] = 254;
       }
     }
-    // Всегда пишем обратно — шум должен фликать каждый кадр (живой TV-эффект)
-    bgCtx.putImageData(img, sx, sy);
+    // Пишем обратно только если реально что-то поменяли
+    if (pixelsEaten > 0) bgCtx.putImageData(img, sx, sy);
     if (pixelsEaten > 0 && Number.isFinite(gained)) {
       areaEaten += pixelsEaten;
       if (isPlayer) scorePlayer += gained;
@@ -823,7 +823,7 @@
 
   const IDLE_MS = 3000;            // 3с без активности → котик появляется (просьба Михаила)
   const IDLE_CHECK_MS = 400;
-  const CAT_SPEED = 3.9;           // +50% (было 2.6)
+  const CAT_SPEED = 5.2;           // ×2 от оригинала (было 2.6 → 3.9 → 5.2)
   const CAT_R = 34;
   const Z_TOP = '2147483647';
   const ACT_EVENTS = ['mousemove', 'mousedown', 'mouseup', 'click', 'keydown', 'wheel', 'touchstart', 'touchmove'];
