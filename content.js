@@ -149,16 +149,21 @@
     bot.angle = Math.PI;
 
     // NPC-кот: серый, чёрные лапки, какает, нельзя его съесть
+    // Стартует с РАНДОМНЫМ направлением чтоб не было статичен на старте
+    const catA = Math.random() * Math.PI * 2;
     cat = {
       x: W * 0.5, y: H * 0.5,
-      dx: 0, dy: 0, angle: 0,
+      dx: Math.cos(catA) * CAT_SPEED,
+      dy: Math.sin(catA) * CAT_SPEED,
+      angle: catA,
       lastStampX: W * 0.5, lastStampY: H * 0.5, footIndex: 0,
       color: '#3A3A3A', pawColor: '#000000',
       radius: 14,
-      nextDirChange: 0,
+      nextDirChange: performance.now() + 800,
       nextPoop: performance.now() + POOP_MIN_INTERVAL,
     };
     poops = [];
+    console.log('[PAC] init done. player=', player.x, player.y, 'bot=', bot.x, bot.y, 'cat=', cat.x, cat.y);
   }
 
   function bindInput() {
@@ -184,37 +189,43 @@
     if (dir && keys[dir]) { keys[dir] = false; e.preventDefault(); e.stopPropagation(); }
   }
 
+  let loopFrame = 0;
   function loop() {
     if (!running) return;
+    try {
+      loopFrame++;
+      if (loopFrame === 1) console.log('[PAC] loop frame 1');
 
-    checkRespawn(player);
-    checkRespawn(bot);
+      checkRespawn(player);
+      checkRespawn(bot);
 
-    if (player.alive) updatePlayer();
-    if (bot.alive) updateBot();
-    updateCat();
+      if (player.alive) updatePlayer();
+      if (bot.alive) updateBot();
+      updateCat();
 
-    if (player.alive) eat(player, true);
-    if (bot.alive) eat(bot, false);
+      if (player.alive) eat(player, true);
+      if (bot.alive) eat(bot, false);
 
-    if (player.alive) checkPoopCollision(player);
-    if (bot.alive) checkPoopCollision(bot);
+      if (player.alive) checkPoopCollision(player);
+      if (bot.alive) checkPoopCollision(bot);
 
-    // Чистый перерисов спрайтов
-    fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
-    drawCat(fxCtx, cat.x, cat.y, cat.radius, cat.angle);
-    if (player.alive) {
-      drawPacman(fxCtx, player.x, player.y, player.radius, player.angle, player.mouth, player.color);
-    } else {
-      drawRespawnTimer(fxCtx, player);
+      fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+      drawCat(fxCtx, cat.x, cat.y, cat.radius, cat.angle);
+      if (player.alive) {
+        drawPacman(fxCtx, player.x, player.y, player.radius, player.angle, player.mouth, player.color);
+      } else {
+        drawRespawnTimer(fxCtx, player);
+      }
+      if (bot.alive) {
+        drawPacman(fxCtx, bot.x, bot.y, bot.radius, bot.angle, performance.now() / 100, bot.color);
+      } else {
+        drawRespawnTimer(fxCtx, bot);
+      }
+
+      updateHUD();
+    } catch (e) {
+      console.error('[PAC] loop crash on frame', loopFrame, e);
     }
-    if (bot.alive) {
-      drawPacman(fxCtx, bot.x, bot.y, bot.radius, bot.angle, performance.now() / 100, bot.color);
-    } else {
-      drawRespawnTimer(fxCtx, bot);
-    }
-
-    updateHUD();
     rafId = requestAnimationFrame(loop);
   }
 
