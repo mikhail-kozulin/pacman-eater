@@ -12,7 +12,7 @@
   const SCORE_TO_WIN = 200;
   const COUNTDOWN_SEC = 3;
   const STAMP_DIST = 50;         // лапки реже, чтоб не сливались
-  const GROWTH_FACTOR = 1.5;     // sqrt(sizePoints) * GROWTH_FACTOR = доп. радиус
+  const GROWTH_FACTOR = 3.0;     // sqrt(sizePoints) * GROWTH_FACTOR = доп. радиус (×2 быстрее)
   const POOP_RADIUS = 12;
   const POOP_MIN_INTERVAL = 5000;
   const POOP_MAX_INTERVAL = 9000;
@@ -22,6 +22,7 @@
   let pawCanvas, pawCtx;
   let fxCanvas, fxCtx;
   let root, hud, screenshotImg;
+  let hudElP, hudElB, hudElT;  // прямые ссылки на HUD, без getElementById
   let player, bot, cat;
   let poops = [];
   let keys = {};
@@ -72,13 +73,18 @@
       pointerEvents: 'none'
     });
     hud.innerHTML = `
-      <span style="color:#FFCC00">🟡 <span id="__pac_player">0</span></span>
-      <span style="color:#FF4444">🤖 <span id="__pac_bot">0</span></span>
+      <span style="color:#FFCC00">🟡 <span data-pac="player">0</span></span>
+      <span style="color:#FF4444">🤖 <span data-pac="bot">0</span></span>
       <span style="color:#aaa">цель <b style="color:#fff">${SCORE_TO_WIN}</b></span>
-      <span style="color:#aaa">⏱ <span id="__pac_time">120</span>с</span>
+      <span style="color:#aaa">⏱ <span data-pac="time">120</span>с</span>
       <span style="color:#888;font-weight:400;font-size:11px">WASD / ← ↑ → ↓ &nbsp;·&nbsp; Esc</span>
     `;
     root.appendChild(hud);
+    // Прямые ссылки на элементы HUD — querySelector внутри hud, надёжнее чем getElementById
+    hudElP = hud.querySelector('[data-pac="player"]');
+    hudElB = hud.querySelector('[data-pac="bot"]');
+    hudElT = hud.querySelector('[data-pac="time"]');
+    console.log('[PAC] HUD refs:', { hudElP, hudElB, hudElT });
 
     screenshotImg = new Image();
     screenshotImg.onload = () => {
@@ -157,8 +163,9 @@
       dy: Math.sin(catA) * CAT_SPEED,
       angle: catA,
       lastStampX: W * 0.5, lastStampY: H * 0.5, footIndex: 0,
-      color: '#3A3A3A', pawColor: '#000000',
-      radius: 14,
+      color: '#3A3A3A',     // используется только для следов лапок (чёрные)
+      pawColor: '#000000',
+      radius: 28,            // ×2 больше прежнего (было 14)
       nextDirChange: performance.now() + 800,
       nextPoop: performance.now() + POOP_MIN_INTERVAL,
     };
@@ -432,12 +439,21 @@
     c.lineCap = 'round';
     const lineW = Math.max(2, r * 0.14);
 
-    // Ушки (треугольники)
-    drawCatEar(c, -r * 0.55, -r * 0.65, r, '#3A3A3A', '#FFB3BA', lineW);
-    drawCatEar(c,  r * 0.55, -r * 0.65, r, '#3A3A3A', '#FFB3BA', lineW);
+    // РАДУЖНАЯ КОШКА: основной цвет циклится по HSL во времени
+    const t = performance.now() / 30;  // скорость цикла
+    const bodyHue = t % 360;
+    const earHueL = (t + 60) % 360;
+    const earHueR = (t + 120) % 360;
+    const bodyColor = `hsl(${bodyHue}, 85%, 55%)`;
+    const earColorL = `hsl(${earHueL}, 85%, 55%)`;
+    const earColorR = `hsl(${earHueR}, 85%, 55%)`;
 
-    // Тело (круг без рта — это не пакман)
-    c.fillStyle = '#3A3A3A';
+    // Ушки (треугольники) — разных цветов
+    drawCatEar(c, -r * 0.55, -r * 0.65, r, earColorL, '#FFB3BA', lineW);
+    drawCatEar(c,  r * 0.55, -r * 0.65, r, earColorR, '#FFB3BA', lineW);
+
+    // Тело — большая радужная клякса
+    c.fillStyle = bodyColor;
     c.beginPath();
     c.arc(0, 0, r, 0, Math.PI * 2);
     c.closePath();
@@ -446,20 +462,42 @@
     c.lineWidth = lineW;
     c.stroke();
 
-    // Два глаза (зеленые, светятся)
-    for (const ex of [-r * 0.3, r * 0.3]) {
+    // Полоски (как у тигра) — другого радужного оттенка
+    c.strokeStyle = `hsl(${(t + 180) % 360}, 85%, 35%)`;
+    c.lineWidth = lineW * 0.6;
+    for (let i = -1; i <= 1; i++) {
+      c.beginPath();
+      c.arc(0, 0, r * 0.7, Math.PI * 0.7 + i * 0.3, Math.PI * 0.95 + i * 0.3);
+      c.stroke();
+    }
+
+    // Два глаза (большие зелёные, светятся)
+    for (const ex of [-r * 0.32, r * 0.32]) {
       c.fillStyle = '#9DFF6B';
       c.beginPath();
-      c.arc(ex, -r * 0.15, r * 0.2, 0, Math.PI * 2);
+      c.arc(ex, -r * 0.15, r * 0.22, 0, Math.PI * 2);
       c.fill();
       c.strokeStyle = '#000';
       c.lineWidth = lineW * 0.5;
       c.stroke();
       c.fillStyle = '#000';
       c.beginPath();
-      c.ellipse(ex, -r * 0.15, r * 0.05, r * 0.18, 0, 0, Math.PI * 2);
+      c.ellipse(ex, -r * 0.15, r * 0.06, r * 0.2, 0, 0, Math.PI * 2);
       c.fill();
     }
+
+    // Носик-сердечко
+    c.fillStyle = '#FF69B4';
+    c.beginPath();
+    c.moveTo(0, r * 0.15);
+    c.lineTo(-r * 0.12, r * 0.05);
+    c.lineTo(r * 0.12, r * 0.05);
+    c.closePath();
+    c.fill();
+    c.strokeStyle = '#000';
+    c.lineWidth = lineW * 0.4;
+    c.stroke();
+
     c.restore();
   }
 
@@ -607,11 +645,11 @@
   function updateHUD() {
     const p = displayScore(scorePlayer);
     const b = displayScore(scoreBot);
-    document.getElementById('__pac_player').textContent = fmt(p);
-    document.getElementById('__pac_bot').textContent = fmt(b);
+    if (hudElP) hudElP.textContent = fmt(p);
+    if (hudElB) hudElB.textContent = fmt(b);
     const elapsed = performance.now() - startedAt;
     const left = Math.max(0, Math.ceil((GAME_DURATION - elapsed) / 1000));
-    document.getElementById('__pac_time').textContent = left;
+    if (hudElT) hudElT.textContent = left;
     if (p >= SCORE_TO_WIN || b >= SCORE_TO_WIN || elapsed >= GAME_DURATION) finish();
   }
 
