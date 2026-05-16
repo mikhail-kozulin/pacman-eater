@@ -25,10 +25,10 @@
   const MAX_CHERRIES = 4;
 
   // ─── Фоновый 2: маленькие пакманы делятся ───
-  const BG2_START_RADIUS = 6;            // очень маленький старт
-  const BG2_BASE_SPEED = 2.0;
-  const BG2_SPLIT_PIXELS = 4000;         // съел столько пикселей → делится
-  const BG2_MAX_BOTS = 24;
+  const BG2_START_RADIUS = 6;            // очень маленький старт, рост ОТКЛЮЧЁН
+  const BG2_BASE_SPEED = 2.6;            // +30% (было 2.0)
+  const BG2_SPLIT_PIXELS = 4000;
+  const BG2_MAX_BOTS = Infinity;         // без потолка — плодятся пока есть еда
   const BG2_PALETTE = [
     ['#FFCC00', '#FFEE77'], ['#FF4444', '#FF99BB'],
     ['#4488FF', '#99CCFF'], ['#44FF88', '#99FFBB'],
@@ -378,8 +378,13 @@
       c, p
     );
     autoBots.push(child);
-    playSound('cherry');
-    triggerShake(10);
+    // Дроссель на звук — не накладывать пачку сплитов
+    const now = performance.now();
+    if (!window.__pacLastSplitSnd || now - window.__pacLastSplitSnd > 250) {
+      playSound('cherry');
+      window.__pacLastSplitSnd = now;
+    }
+    triggerShake(6);
   }
 
   let loopBg2Frame = 0;
@@ -723,20 +728,27 @@
     // Пишем обратно только если реально что-то поменяли
     if (pixelsEaten > 0) {
       bgCtx.putImageData(img, sx, sy);
-      // Чавкаем не чаще раза в 200мс на сущность
-      if (!entity._lastEatT || performance.now() - entity._lastEatT > 200) {
+      // Чавк дросселим: на сущность раз в 200мс; В bg2 ещё и общий 80мс
+      const now = performance.now();
+      const okEntity = !entity._lastEatT || now - entity._lastEatT > 200;
+      const okGlobal = currentMode !== 'background2' || !window.__pacLastEatSnd || now - window.__pacLastEatSnd > 80;
+      if (okEntity && okGlobal) {
         playSound('eat');
-        entity._lastEatT = performance.now();
+        entity._lastEatT = now;
+        window.__pacLastEatSnd = now;
       }
     }
     if (pixelsEaten > 0 && Number.isFinite(gained)) {
       areaEaten += pixelsEaten;
       if (isPlayer) scorePlayer += gained;
       else scoreBot += gained;
-      // Рост — по количеству съеденных пикселей, без веса по цвету
+      // Накапливаем pixelsEatenTotal — нужен для сплита в bg2.
+      // Радиус НЕ растёт в bg2 (они остаются маленькими шариками).
       entity.pixelsEatenTotal += pixelsEaten;
-      const newR = entity.baseR + Math.sqrt(entity.pixelsEatenTotal / 2000) * GROWTH_FACTOR;
-      entity.radius = Number.isFinite(newR) ? newR : entity.baseR;
+      if (currentMode !== 'background2') {
+        const newR = entity.baseR + Math.sqrt(entity.pixelsEatenTotal / 2000) * GROWTH_FACTOR;
+        entity.radius = Number.isFinite(newR) ? newR : entity.baseR;
+      }
     }
 
     // Штамп лапки если сдвинулись достаточно далеко
