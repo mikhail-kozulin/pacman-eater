@@ -811,3 +811,345 @@
     if (msg.type === 'START_PACMAN') start(msg.screenshot, msg.mode || 'single');
   });
 })();
+// ============================================================
+// ФОНОВЫЙ РЕЖИМ — полностью отдельная функция.
+// Не трогает игровой код выше. Свой guard-флаг, свой listener,
+// своё рисование котика. Живёт поверх живой страницы и удаляет
+// реальные DOM-элементы по пути.
+// ============================================================
+(() => {
+  if (window.__pacmanBgLoaded) return;
+  window.__pacmanBgLoaded = true;
+
+  const IDLE_MS = 3000;            // 3с без активности → котик появляется (просьба Михаила)
+  const IDLE_CHECK_MS = 400;
+  const CAT_SPEED = 2.6;
+  const CAT_R = 34;
+  const Z_TOP = '2147483647';
+  const ACT_EVENTS = ['mousemove', 'mousedown', 'mouseup', 'click', 'keydown', 'wheel', 'touchstart', 'touchmove'];
+
+  const state = {
+    enabled: false,
+    sessionOn: false,
+    lastActivityAt: 0,
+    cat: null,
+    canvas: null,
+    ctx: null,
+    rafId: null,
+    idleTimer: null,
+    indicator: null,
+    fx: [],
+  };
+
+  function enableMode() {
+    if (state.enabled) return;
+    state.enabled = true;
+    state.lastActivityAt = performance.now();
+    ACT_EVENTS.forEach(ev => window.addEventListener(ev, onActivity, { capture: true, passive: true }));
+    window.addEventListener('scroll', onActivity, { capture: true, passive: true });
+    showIndicator();
+    scheduleIdleCheck();
+    console.log('[PAC-BG] mode ON');
+  }
+
+  function disableMode() {
+    if (!state.enabled) return;
+    state.enabled = false;
+    endSession();
+    ACT_EVENTS.forEach(ev => window.removeEventListener(ev, onActivity, { capture: true }));
+    window.removeEventListener('scroll', onActivity, { capture: true });
+    if (state.idleTimer) { clearTimeout(state.idleTimer); state.idleTimer = null; }
+    hideIndicator();
+    console.log('[PAC-BG] mode OFF');
+  }
+
+  function onActivity(e) {
+    state.lastActivityAt = performance.now();
+    if (state.sessionOn) {
+      // Esc во время сессии — вырубить весь режим, чтоб котик не возвращался
+      if (e && e.type === 'keydown' && e.key === 'Escape') {
+        disableMode();
+        return;
+      }
+      endSession();
+    }
+  }
+
+  function scheduleIdleCheck() {
+    if (!state.enabled) return;
+    state.idleTimer = setTimeout(() => {
+      if (!state.enabled) return;
+      const now = performance.now();
+      if (!state.sessionOn && now - state.lastActivityAt >= IDLE_MS) {
+        startSession();
+      }
+      scheduleIdleCheck();
+    }, IDLE_CHECK_MS);
+  }
+
+  function startSession() {
+    if (state.sessionOn) return;
+    state.sessionOn = true;
+
+    const canvas = document.createElement('canvas');
+    canvas.setAttribute('data-pacman-overlay', 'bg-canvas');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    Object.assign(canvas.style, {
+      position: 'fixed', left: '0', top: '0',
+      width: '100vw', height: '100vh',
+      pointerEvents: 'none', zIndex: Z_TOP,
+    });
+    document.documentElement.appendChild(canvas);
+    state.canvas = canvas;
+    state.ctx = canvas.getContext('2d');
+
+    const a = Math.random() * Math.PI * 2;
+    state.cat = {
+      x: window.innerWidth * (0.25 + Math.random() * 0.5),
+      y: window.innerHeight * (0.25 + Math.random() * 0.5),
+      dx: Math.cos(a) * CAT_SPEED,
+      dy: Math.sin(a) * CAT_SPEED,
+      angle: a,
+      mouth: 0,
+      r: CAT_R,
+      nextDirChange: performance.now() + 1500,
+    };
+    state.fx = [];
+    if (state.indicator) state.indicator.style.background = 'rgba(123, 97, 255, 0.85)';
+
+    loop();
+    console.log('[PAC-BG] session START');
+  }
+
+  function endSession() {
+    if (!state.sessionOn) return;
+    state.sessionOn = false;
+    if (state.rafId) cancelAnimationFrame(state.rafId);
+    state.rafId = null;
+    if (state.canvas) state.canvas.remove();
+    state.canvas = null;
+    state.ctx = null;
+    state.cat = null;
+    state.fx = [];
+    if (state.indicator) state.indicator.style.background = 'rgba(0,0,0,0.7)';
+    console.log('[PAC-BG] session END');
+  }
+
+  function loop() {
+    if (!state.sessionOn) return;
+    const cat = state.cat;
+    const ctx = state.ctx;
+    const canvas = state.canvas;
+
+    if (canvas.width !== window.innerWidth || canvas.height !== window.innerHeight) {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    const W = canvas.width, H = canvas.height, r = cat.r;
+
+    cat.x += cat.dx;
+    cat.y += cat.dy;
+
+    let bounced = false;
+    if (cat.x < r) { cat.x = r; cat.dx = Math.abs(cat.dx); bounced = true; }
+    if (cat.x > W - r) { cat.x = W - r; cat.dx = -Math.abs(cat.dx); bounced = true; }
+    if (cat.y < r) { cat.y = r; cat.dy = Math.abs(cat.dy); bounced = true; }
+    if (cat.y > H - r) { cat.y = H - r; cat.dy = -Math.abs(cat.dy); bounced = true; }
+
+    const now = performance.now();
+    if (now >= cat.nextDirChange || bounced) {
+      const ang = Math.atan2(cat.dy, cat.dx) + (Math.random() - 0.5) * 1.6;
+      cat.dx = Math.cos(ang) * CAT_SPEED;
+      cat.dy = Math.sin(ang) * CAT_SPEED;
+      cat.nextDirChange = now + 1200 + Math.random() * 2000;
+    }
+
+    cat.angle = Math.atan2(cat.dy, cat.dx);
+    cat.mouth = (cat.mouth + 0.25) % (Math.PI * 2);
+
+    tryEat(cat);
+
+    ctx.clearRect(0, 0, W, H);
+    drawFx(ctx, now);
+    drawCatPacman(ctx, cat);
+
+    state.rafId = requestAnimationFrame(loop);
+  }
+
+  function tryEat(cat) {
+    // 2 точки — центр и кончик морды, чтоб ловить элементы по ходу движения
+    const points = [
+      [cat.x, cat.y],
+      [cat.x + Math.cos(cat.angle) * cat.r * 0.7, cat.y + Math.sin(cat.angle) * cat.r * 0.7],
+    ];
+    const seen = new Set();
+    for (const [x, y] of points) {
+      if (x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight) continue;
+      let els;
+      try { els = document.elementsFromPoint(x, y); } catch (_) { continue; }
+      if (!els) continue;
+      for (const el of els) {
+        if (!el || seen.has(el)) continue;
+        seen.add(el);
+        if (!isEatable(el)) continue;
+        eatElement(el);
+        return; // одно поедание за кадр — чтоб видеть эффект
+      }
+    }
+  }
+
+  function isEatable(el) {
+    if (!el || !el.tagName) return false;
+    // Наш собственный канвас и индикатор — не трогаем
+    if (el.hasAttribute && el.hasAttribute('data-pacman-overlay')) return false;
+    if (el.closest && el.closest('[data-pacman-overlay]')) return false;
+    // Контейнеры верхнего уровня — не трогаем (иначе одним укусом сожрём всю страницу)
+    const tag = el.tagName;
+    if (tag === 'HTML' || tag === 'BODY') return false;
+    let rect;
+    try { rect = el.getBoundingClientRect(); } catch (_) { return false; }
+    const vw = window.innerWidth, vh = window.innerHeight;
+    if (rect.width < 4 || rect.height < 4) return false;
+    if (rect.width * rect.height > vw * vh * 0.45) return false; // слишком жирный — пропускаем, котик идёт дальше
+    return true;
+  }
+
+  function eatElement(el) {
+    let rect;
+    try { rect = el.getBoundingClientRect(); } catch (_) { return; }
+    state.fx.push({
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+      bornAt: performance.now(),
+      r: Math.min(70, Math.max(20, Math.max(rect.width, rect.height) * 0.5 + 12)),
+    });
+    try { el.remove(); } catch (_) {}
+  }
+
+  function drawFx(ctx, now) {
+    const DUR = 380;
+    const next = [];
+    for (const fx of state.fx) {
+      const age = now - fx.bornAt;
+      if (age >= DUR) continue;
+      next.push(fx);
+      const t = age / DUR;
+      const rr = fx.r * (0.4 + t * 0.9);
+      ctx.save();
+      ctx.globalAlpha = (1 - t) * 0.9;
+      ctx.strokeStyle = `hsl(${(now / 18) % 360}, 90%, 60%)`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(fx.x, fx.y, rr, 0, Math.PI * 2);
+      ctx.stroke();
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + t * 2.5;
+        const sx = fx.x + Math.cos(a) * rr;
+        const sy = fx.y + Math.sin(a) * rr;
+        ctx.fillStyle = `hsl(${(now / 18 + i * 60) % 360}, 90%, 70%)`;
+        ctx.beginPath();
+        ctx.arc(sx, sy, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+    state.fx = next;
+  }
+
+  function drawCatPacman(ctx, cat) {
+    const r = cat.r;
+    const mouth = (Math.sin(cat.mouth) + 1) / 2 * 0.55 + 0.08;
+    const lineW = Math.max(2.5, r * 0.13);
+    const t = performance.now() / 30;
+    const body = `hsl(${t % 360}, 85%, 58%)`;
+    const earL = `hsl(${(t + 60) % 360}, 85%, 58%)`;
+    const earR = `hsl(${(t + 120) % 360}, 85%, 58%)`;
+
+    ctx.save();
+    ctx.translate(cat.x, cat.y);
+    ctx.rotate(cat.angle);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+
+    drawEar(ctx, -r * 0.55, -r * 0.65, r, earL, '#FFB3BA', lineW);
+    drawEar(ctx,  r * 0.55, -r * 0.65, r, earR, '#FFB3BA', lineW);
+
+    // Тело пакмана с чавкающим ртом
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, r, mouth, Math.PI * 2 - mouth);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = lineW;
+    ctx.stroke();
+
+    // Глаз
+    ctx.fillStyle = '#FFF';
+    ctx.beginPath();
+    ctx.arc(0, -r * 0.4, r * 0.25, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = lineW * 0.6;
+    ctx.stroke();
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.arc(r * 0.05, -r * 0.4, r * 0.13, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  function drawEar(ctx, baseX, baseY, r, fillColor, innerColor, lineW) {
+    const w = r * 0.55;
+    const h = r * 1.0;
+    ctx.beginPath();
+    ctx.moveTo(baseX - w, baseY);
+    ctx.lineTo(baseX + w, baseY);
+    ctx.lineTo(baseX, baseY - h);
+    ctx.closePath();
+    ctx.fillStyle = fillColor;
+    ctx.fill();
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = lineW;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(baseX - w * 0.55, baseY - h * 0.1);
+    ctx.lineTo(baseX + w * 0.55, baseY - h * 0.1);
+    ctx.lineTo(baseX, baseY - h * 0.75);
+    ctx.closePath();
+    ctx.fillStyle = innerColor;
+    ctx.fill();
+  }
+
+  function showIndicator() {
+    if (state.indicator) return;
+    const ind = document.createElement('div');
+    ind.setAttribute('data-pacman-overlay', 'bg-indicator');
+    ind.textContent = '🐱 фоновый режим (Esc — выкл)';
+    Object.assign(ind.style, {
+      position: 'fixed', right: '12px', bottom: '12px',
+      padding: '6px 10px',
+      background: 'rgba(0,0,0,0.7)', color: '#FFCC00',
+      fontFamily: '-apple-system, sans-serif', fontSize: '12px',
+      fontWeight: '600', borderRadius: '6px',
+      pointerEvents: 'none', zIndex: Z_TOP,
+      userSelect: 'none',
+    });
+    document.documentElement.appendChild(ind);
+    state.indicator = ind;
+  }
+
+  function hideIndicator() {
+    if (state.indicator) { state.indicator.remove(); state.indicator = null; }
+  }
+
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg && msg.type === 'TOGGLE_BACKGROUND') {
+      if (state.enabled) disableMode();
+      else enableMode();
+    }
+  });
+})();
