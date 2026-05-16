@@ -27,7 +27,10 @@
   // ─── Фоновый 2: маленькие пакманы делятся ───
   const BG2_START_RADIUS = 3;            // ×1.5 от 2 (между 6-старым и 2-микро)
   const BG2_BASE_SPEED = 2.6;            // +30% (было 2.0)
-  const BG2_SPLIT_PIXELS = 200;          // мелкий пакман жрёт ~6px/кадр → ~0.5с до сплита
+  // Порог сплита привязан к площади (r²) — больший пакман жрёт пропорционально
+  // быстрее, но и порог у него выше → темп размножения не зависит от размера.
+  // ×3 медленнее чем предыдущая версия.
+  const BG2_SPLIT_RATE = 66;             // pixels на единицу площади (r²) до сплита
   const BG2_MAX_BOTS = Infinity;         // без потолка — плодятся пока есть еда
   const BG2_PALETTE = [
     ['#FFCC00', '#FFEE77'], ['#FF4444', '#FF99BB'],
@@ -365,7 +368,8 @@
 
   function maybeSplit(b, idx) {
     if (autoBots.length >= BG2_MAX_BOTS) return;
-    if (b.pixelsEatenTotal < BG2_SPLIT_PIXELS) return;
+    const threshold = BG2_SPLIT_RATE * b.radius * b.radius;
+    if (b.pixelsEatenTotal < threshold) return;
     // СПЛИТ: родитель и ребёнок оба возвращаются к baseR
     b.pixelsEatenTotal = 0;
     b.radius = b.baseR;
