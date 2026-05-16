@@ -24,6 +24,18 @@
   const CHERRY_SPAWN_MAX = 9000;
   const MAX_CHERRIES = 4;
 
+  // ─── Фоновый 2: маленькие пакманы делятся ───
+  const BG2_START_RADIUS = 6;            // очень маленький старт
+  const BG2_BASE_SPEED = 2.0;
+  const BG2_SPLIT_PIXELS = 4000;         // съел столько пикселей → делится
+  const BG2_MAX_BOTS = 24;
+  const BG2_PALETTE = [
+    ['#FFCC00', '#FFEE77'], ['#FF4444', '#FF99BB'],
+    ['#4488FF', '#99CCFF'], ['#44FF88', '#99FFBB'],
+    ['#FF88FF', '#FFBBFF'], ['#FF8844', '#FFBB99'],
+    ['#88FFFF', '#BBFFFF'], ['#FFFF88', '#FFFFBB'],
+  ];
+
   let bgCanvas, bgCtx;
   let pawCanvas, pawCtx;
   let fxCanvas, fxCtx;
@@ -31,6 +43,7 @@
   let hudElP, hudElB, hudElT;  // прямые ссылки на HUD, без getElementById
   let player, bot, cat;
   let poops = [];
+  let autoBots = [];   // только для режима background2
   let keys = {};
   let scorePlayer = 0, scoreBot = 0;
   let areaEaten = 0, totalArea = 0;
@@ -256,9 +269,10 @@
       pointerEvents: 'none'
     });
     const isPair = (currentMode === 'pair');
-    const p1Label = isPair ? '🟡 P1' : '🟡';
-    const p2Label = isPair ? '🔴 P2' : '🤖';
-    const ctrlHint = isPair ? 'P1: WASD &nbsp;·&nbsp; P2: ← ↑ → ↓' : 'WASD / ← ↑ → ↓';
+    const isBg2 = (currentMode === 'background2');
+    const p1Label = isPair ? '🟡 P1' : (isBg2 ? '🌌 съедено' : '🟡');
+    const p2Label = isPair ? '🔴 P2' : (isBg2 ? '🤖 ботов' : '🤖');
+    const ctrlHint = isPair ? 'P1: WASD &nbsp;·&nbsp; P2: ← ↑ → ↓' : (isBg2 ? 'самосплитятся' : 'WASD / ← ↑ → ↓');
     hud.innerHTML = `
       <span style="color:#FFCC00">${p1Label} <span data-pac="player">0</span></span>
       <span style="color:#FF4444">${p2Label} <span data-pac="bot">0</span></span>
@@ -276,6 +290,18 @@
     screenshotImg = new Image();
     screenshotImg.onload = () => {
       bgCtx.drawImage(screenshotImg, 0, 0, W, H);
+      if (currentMode === 'background2') {
+        initBg2(W, H);
+        // Минимум setup: Esc для выхода
+        window.addEventListener('keydown', bg2Esc, true);
+        runCountdown(() => {
+          startedAt = performance.now();
+          running = true;
+          loopBg2();
+          startMusic();
+        });
+        return;
+      }
       initEntities(W, H);
       bindInput();
       runCountdown(() => {
@@ -286,10 +312,108 @@
         botBrainTick();
         catBrainTick();
         cherryTick();
-        startMusic();   // 🎵 непрерывная 8-бит фоновая
+        startMusic();
       });
     };
     screenshotImg.src = screenshotDataUrl;
+  }
+
+  function bg2Esc(e) {
+    if (e.key === 'Escape') { stop(); e.preventDefault(); }
+  }
+
+  // ═════════ 🌌 ФОНОВЫЙ 2: маленькие пакманы делятся ═════════
+  function makeAutoBot(x, y, color, pawColor) {
+    const a = Math.random() * Math.PI * 2;
+    return {
+      x, y, startX: x, startY: y,
+      dx: Math.cos(a) * BG2_BASE_SPEED, dy: Math.sin(a) * BG2_BASE_SPEED,
+      angle: a, mouth: Math.random() * Math.PI * 2,
+      lastStampX: x, lastStampY: y, footIndex: 0,
+      color, pawColor,
+      baseR: BG2_START_RADIUS, radius: BG2_START_RADIUS,
+      pixelsEatenTotal: 0, sizePoints: 0,
+      alive: true, respawnAt: 0,
+      nextDirChange: performance.now() + 600 + Math.random() * 1200,
+    };
+  }
+
+  function initBg2(W, H) {
+    autoBots = [];
+    const [c, p] = BG2_PALETTE[0];
+    autoBots.push(makeAutoBot(W * 0.5, H * 0.5, c, p));
+    console.log('[PAC2] init done, autoBots=', autoBots.length);
+  }
+
+  function updateAutoBot(b, W, H, now) {
+    // Случайная смена направления
+    if (now >= b.nextDirChange) {
+      const a = Math.atan2(b.dy, b.dx) + (Math.random() - 0.5) * 1.8;
+      b.dx = Math.cos(a) * BG2_BASE_SPEED;
+      b.dy = Math.sin(a) * BG2_BASE_SPEED;
+      b.angle = a;
+      b.nextDirChange = now + 600 + Math.random() * 1400;
+    }
+    b.x += b.dx; b.y += b.dy;
+    // Отскок от стен
+    if (b.x < b.radius) { b.x = b.radius; b.dx = Math.abs(b.dx); b.angle = Math.atan2(b.dy, b.dx); }
+    if (b.x > W - b.radius) { b.x = W - b.radius; b.dx = -Math.abs(b.dx); b.angle = Math.atan2(b.dy, b.dx); }
+    if (b.y < b.radius) { b.y = b.radius; b.dy = Math.abs(b.dy); b.angle = Math.atan2(b.dy, b.dx); }
+    if (b.y > H - b.radius) { b.y = H - b.radius; b.dy = -Math.abs(b.dy); b.angle = Math.atan2(b.dy, b.dx); }
+    b.mouth = (b.mouth + 0.25) % (Math.PI * 2);
+  }
+
+  function maybeSplit(b, idx) {
+    if (autoBots.length >= BG2_MAX_BOTS) return;
+    if (b.pixelsEatenTotal < BG2_SPLIT_PIXELS) return;
+    // СПЛИТ: родитель и ребёнок оба возвращаются к baseR
+    b.pixelsEatenTotal = 0;
+    b.radius = b.baseR;
+    const [c, p] = BG2_PALETTE[autoBots.length % BG2_PALETTE.length];
+    const offAng = Math.random() * Math.PI * 2;
+    const off = b.baseR * 4;
+    const child = makeAutoBot(
+      Math.max(b.baseR + 1, Math.min(bgCanvas.width - b.baseR - 1, b.x + Math.cos(offAng) * off)),
+      Math.max(b.baseR + 1, Math.min(bgCanvas.height - b.baseR - 1, b.y + Math.sin(offAng) * off)),
+      c, p
+    );
+    autoBots.push(child);
+    playSound('cherry');
+    triggerShake(10);
+  }
+
+  let loopBg2Frame = 0;
+  function loopBg2() {
+    if (!running) return;
+    try {
+      loopBg2Frame++;
+      if (loopBg2Frame === 1) console.log('[PAC2] loop frame 1');
+      const W = bgCanvas.width, H = bgCanvas.height, now = performance.now();
+      for (const b of autoBots) updateAutoBot(b, W, H, now);
+      for (const b of autoBots) eat(b, true);  // всё в scorePlayer
+      for (let i = autoBots.length - 1; i >= 0; i--) maybeSplit(autoBots[i], i);
+
+      applyShake();
+
+      fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+      drawCherries(fxCtx);
+      for (const b of autoBots) {
+        drawPacman(fxCtx, b.x, b.y, b.radius, b.angle, b.mouth, b.color);
+      }
+      updateBg2HUD();
+    } catch (e) {
+      console.error('[PAC2] crash on frame', loopBg2Frame, e);
+    }
+    rafId = requestAnimationFrame(loopBg2);
+  }
+
+  function updateBg2HUD() {
+    if (hudElP) hudElP.textContent = fmt(displayScore(scorePlayer));
+    if (hudElB) hudElB.textContent = autoBots.length;
+    const elapsed = performance.now() - startedAt;
+    const left = Math.max(0, Math.ceil((GAME_DURATION - elapsed) / 1000));
+    if (hudElT) hudElT.textContent = left;
+    if (elapsed >= GAME_DURATION) finish();
   }
 
   function runCountdown(onDone) {

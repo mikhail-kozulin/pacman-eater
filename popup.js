@@ -11,12 +11,12 @@ document.querySelectorAll('button[data-mode]').forEach(btn => {
     });
 
     if (mode === 'background') {
-      // Фоновый режим: НЕ снимаем скриншот, не запускаем игру.
+      // Фоновый 1: НЕ снимаем скриншот, не запускаем игру.
       // Котик появляется поверх живой страницы и жрёт реальные DOM-элементы
-      // через 3 секунды простоя (мышь/клавиатура/скролл).
+      // через 3 секунды простоя.
       await chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_BACKGROUND' });
     } else {
-      // Соло / Парный — обычная игра по скриншоту
+      // Соло / Парный / Фоновый 2 — игра по скриншоту
       let screenshot;
       try {
         screenshot = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
