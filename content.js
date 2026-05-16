@@ -2,17 +2,17 @@
   if (window.__pacmanEaterRunning) return;
   window.__pacmanEaterRunning = true;
 
-  const BASE_RADIUS = 20;
+  const BASE_RADIUS = 12;        // меньше старт (было 20)
   const SPEED = 4.0;
   const BOT_SPEED = 3.0;
-  const CAT_SPEED = 1.6;
+  const CAT_SPEED = 4.5;         // в ~3 раза быстрее (хаоса больше)
   const SCAN_INTERVAL = 250;
   const GAME_DURATION = 120_000;
   const SCORE_DIVISOR = 2000;   // в 20 раз медленнее чем раньше (было 100)
-  const SCORE_TO_WIN = 200;
+  const SCORE_TO_WIN = 400;       // ×2 (было 200)
   const COUNTDOWN_SEC = 3;
   const STAMP_DIST = 50;         // лапки реже, чтоб не сливались
-  const GROWTH_FACTOR = 3.0;     // sqrt(sizePoints) * GROWTH_FACTOR = доп. радиус (×2 быстрее)
+  const GROWTH_FACTOR = 6.0;     // ×2 от прошлого (было 3.0)
   const POOP_RADIUS = 12;
   const POOP_MIN_INTERVAL = 5000;
   const POOP_MAX_INTERVAL = 9000;
@@ -421,7 +421,7 @@
       cat.dx = Math.cos(a) * CAT_SPEED;
       cat.dy = Math.sin(a) * CAT_SPEED;
       cat.angle = a;
-      cat.nextDirChange = now + 500 + Math.random() * 1500;
+      cat.nextDirChange = now + 250 + Math.random() * 700;  // чаще меняет направление
     }
     // Какает каждые 5–9 сек
     if (now >= cat.nextPoop) {
@@ -434,7 +434,9 @@
   function drawCat(c, x, y, r, angle) {
     c.save();
     c.translate(x, y);
-    c.rotate(angle);
+    // Уши всегда смотрят ВВЕРХ. Зеркалим горизонтально если идёт влево.
+    // (Раньше rotate(angle) переворачивал кошку вверх ногами при движении влево.)
+    if (Math.cos(angle) < 0) c.scale(-1, 1);
     c.lineJoin = 'round';
     c.lineCap = 'round';
     const lineW = Math.max(2, r * 0.14);
