@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Pacman Eater",
+  "version": "0.1.0",
+  "description": "Запусти пакмана на любом сайте — он жрёт интерфейс. Чем темнее пиксель — тем больше очков. Бот пытается съесть больше тебя.",
+  "permissions": ["activeTab", "scripting"],
+  "action": {
+    "default_title": "Запустить пакмана",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}
