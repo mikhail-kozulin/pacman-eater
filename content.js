@@ -17,6 +17,11 @@
   const POOP_MIN_INTERVAL = 5000;
   const POOP_MAX_INTERVAL = 9000;
   const RESPAWN_MS = 3000;
+  const CHERRY_RADIUS = 14;
+  const CHERRY_BONUS = 20;             // отображаемых очков за вишенку
+  const CHERRY_SPAWN_MIN = 4000;
+  const CHERRY_SPAWN_MAX = 9000;
+  const MAX_CHERRIES = 4;
 
   let bgCanvas, bgCtx;
   let pawCanvas, pawCtx;
@@ -152,13 +157,15 @@
       color, pawColor,
       baseR: BASE_RADIUS, radius: BASE_RADIUS,
       sizePoints: 0,
+      pixelsEatenTotal: 0,   // для роста — количество съеденных пикселей (без веса по цвету)
       alive: true, respawnAt: 0,
     };
   }
 
   function initEntities(W, H) {
-    player = makeEntity(W * 0.2, H * 0.5, '#FFCC00', '#6B4F1D');
-    bot    = makeEntity(W * 0.8, H * 0.5, '#FF4444', '#8B0000');
+    // Цвета лапок СВЕТЛЫЕ — для контраста на чёрном TV-фоне после съедания
+    player = makeEntity(W * 0.2, H * 0.5, '#FFCC00', '#FFEE77');  // ярко-жёлтые лапки
+    bot    = makeEntity(W * 0.8, H * 0.5, '#FF4444', '#FF99BB');  // светло-розовые лапки
     bot.angle = Math.PI;
     // В парном режиме "bot" становится человеком №2 (на стрелках).
     // Доп. поле isHuman2 — на этом завязан updateBot (вместо AI читает клавиши).
@@ -173,8 +180,8 @@
       dy: Math.sin(catA) * CAT_SPEED,
       angle: catA,
       lastStampX: W * 0.5, lastStampY: H * 0.5, footIndex: 0,
-      color: '#3A3A3A',     // используется только для следов лапок (чёрные)
-      pawColor: '#000000',
+      color: '#3A3A3A',
+      pawColor: '#FFFFFF',  // БЕЛЫЕ лапки кошки — для контраста на чёрном фоне
       radius: 28,            // ×2 больше прежнего (было 14)
       nextDirChange: performance.now() + 800,
       nextPoop: performance.now() + POOP_MIN_INTERVAL,
@@ -352,6 +359,7 @@
     const data = bgCtx.getImageData(sx, sy, w, h).data;
     let sum = 0, count = 0;
     for (let i = 0; i < data.length; i += 16) {
+      if (data[i+3] < 255) continue;  // съеденное — бот туда не пойдёт
       sum += 1 - (data[i] + data[i+1] + data[i+2]) / (3 * 255);
       count++;
     }
@@ -379,22 +387,36 @@
         const dx = px - r, dy = py - r;
         if (dx*dx + dy*dy > r*r) continue;
         const i = (py * w + px) * 4;
-        const R = data[i], G = data[i+1], B = data[i+2];
-        if (R > 248 && G > 248 && B > 248) continue;
-        const d = 1 - (R + G + B) / (3 * 255);
-        const points = d < 0.3 ? d * 1 : d * 3;
-        gained += points;
-        pixelsEaten++;
-        data[i] = 255; data[i+1] = 255; data[i+2] = 255;
+        // Маркер «уже съедено» — alpha=254 (визуально не отличить от 255).
+        // Незатронутые пиксели скриншота имеют alpha=255.
+        const alreadyEaten = data[i+3] < 255;
+        if (!alreadyEaten) {
+          const R = data[i], G = data[i+1], B = data[i+2];
+          const d = 1 - (R + G + B) / (3 * 255);
+          const points = d < 0.3 ? d * 1 : d * 3;
+          gained += points;
+          pixelsEaten++;
+        }
+        // TV-шум: чёрный фон + редкие цветные точки (как старый телек)
+        // Перерандомизируем КАЖДЫЙ кадр — снег «двигается» под пакманом.
+        const noise = Math.random();
+        if (noise < 0.72)      { data[i] = 0;   data[i+1] = 0;   data[i+2] = 0; }
+        else if (noise < 0.82) { data[i] = 230; data[i+1] = 230; data[i+2] = 230; }
+        else if (noise < 0.88) { data[i] = 220; data[i+1] = 40;  data[i+2] = 40; }
+        else if (noise < 0.94) { data[i] = 40;  data[i+1] = 200; data[i+2] = 40; }
+        else                   { data[i] = 40;  data[i+1] = 80;  data[i+2] = 240; }
+        data[i+3] = 254;
       }
     }
+    // Всегда пишем обратно — шум должен фликать каждый кадр (живой TV-эффект)
+    bgCtx.putImageData(img, sx, sy);
     if (pixelsEaten > 0 && Number.isFinite(gained)) {
-      bgCtx.putImageData(img, sx, sy);
       areaEaten += pixelsEaten;
       if (isPlayer) scorePlayer += gained;
       else scoreBot += gained;
-      entity.sizePoints += gained;
-      const newR = entity.baseR + Math.sqrt(Math.max(0, entity.sizePoints) / SCORE_DIVISOR) * GROWTH_FACTOR;
+      // Рост — по количеству съеденных пикселей, без веса по цвету
+      entity.pixelsEatenTotal += pixelsEaten;
+      const newR = entity.baseR + Math.sqrt(entity.pixelsEatenTotal / 2000) * GROWTH_FACTOR;
       entity.radius = Number.isFinite(newR) ? newR : entity.baseR;
     }
 
@@ -594,12 +616,7 @@
     const touchDist = (player.radius + bot.radius) * 0.85;
     if (dist >= touchDist || dist < 0.001) return;
 
-    const sizeDiff = player.radius - bot.radius;
-    // Сильно больше = съел
-    if (sizeDiff > 4) { die(bot); return; }
-    if (sizeDiff < -4) { die(player); return; }
-
-    // Близкие размеры — решает направление подхода
+    // Размер не учитываем. Решает кто агрессивнее наступает.
     const playerApproach = (player.dx * dx + player.dy * dy) / dist;
     const botApproach   = -(bot.dx * dx + bot.dy * dy) / dist;
 
@@ -633,6 +650,7 @@
     entity.alive = false;
     entity.respawnAt = performance.now() + RESPAWN_MS;
     entity.sizePoints = 0;
+    entity.pixelsEatenTotal = 0;
     entity.radius = entity.baseR;
     entity.dx = 0;
     entity.dy = 0;
