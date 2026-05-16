@@ -1030,8 +1030,17 @@
 
   const IDLE_MS = 3000;            // 3с без активности → котик появляется (просьба Михаила)
   const IDLE_CHECK_MS = 400;
-  const CAT_SPEED = 5.2;           // ×2 от оригинала (было 2.6 → 3.9 → 5.2)
+  const CAT_BASE_SPEED = 5.2;      // стартовая скорость сессии
+  const CAT_MAX_SPEED = 22;        // верхний потолок (px/frame)
+  const CAT_ACCEL_PER_SEC = 0.7;   // прирост скорости в сек
   const CAT_R = 34;
+
+  // Текущая скорость = base + elapsed * accel, capped at max
+  function currentCatSpeed() {
+    if (!state.sessionStartedAt) return CAT_BASE_SPEED;
+    const elapsed = (performance.now() - state.sessionStartedAt) / 1000;
+    return Math.min(CAT_MAX_SPEED, CAT_BASE_SPEED + elapsed * CAT_ACCEL_PER_SEC);
+  }
   const Z_TOP = '2147483647';
   const ACT_EVENTS = ['mousemove', 'mousedown', 'mouseup', 'click', 'keydown', 'wheel', 'touchstart', 'touchmove'];
 
@@ -1097,6 +1106,7 @@
   function startSession() {
     if (state.sessionOn) return;
     state.sessionOn = true;
+    state.sessionStartedAt = performance.now();  // для разгона скорости
 
     const canvas = document.createElement('canvas');
     canvas.setAttribute('data-pacman-overlay', 'bg-canvas');
@@ -1115,8 +1125,8 @@
     state.cat = {
       x: window.innerWidth * (0.25 + Math.random() * 0.5),
       y: window.innerHeight * (0.25 + Math.random() * 0.5),
-      dx: Math.cos(a) * CAT_SPEED,
-      dy: Math.sin(a) * CAT_SPEED,
+      dx: Math.cos(a) * CAT_BASE_SPEED,
+      dy: Math.sin(a) * CAT_BASE_SPEED,
       angle: a,
       mouth: 0,
       r: CAT_R,
@@ -1155,6 +1165,14 @@
     }
     const W = canvas.width, H = canvas.height, r = cat.r;
 
+    // Плавный разгон: каждый кадр нормируем вектор к текущей скорости
+    const targetSpeed = currentCatSpeed();
+    const curMag = Math.hypot(cat.dx, cat.dy);
+    if (curMag > 0.01) {
+      const scale = targetSpeed / curMag;
+      cat.dx *= scale; cat.dy *= scale;
+    }
+
     cat.x += cat.dx;
     cat.y += cat.dy;
 
@@ -1167,8 +1185,8 @@
     const now = performance.now();
     if (now >= cat.nextDirChange || bounced) {
       const ang = Math.atan2(cat.dy, cat.dx) + (Math.random() - 0.5) * 1.6;
-      cat.dx = Math.cos(ang) * CAT_SPEED;
-      cat.dy = Math.sin(ang) * CAT_SPEED;
+      cat.dx = Math.cos(ang) * targetSpeed;
+      cat.dy = Math.sin(ang) * targetSpeed;
       cat.nextDirChange = now + 1200 + Math.random() * 2000;
     }
 
