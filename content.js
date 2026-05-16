@@ -332,14 +332,14 @@
         data[i] = 255; data[i+1] = 255; data[i+2] = 255;
       }
     }
-    if (pixelsEaten > 0) {
+    if (pixelsEaten > 0 && Number.isFinite(gained)) {
       bgCtx.putImageData(img, sx, sy);
       areaEaten += pixelsEaten;
       if (isPlayer) scorePlayer += gained;
       else scoreBot += gained;
-      // Рост — sqrt от накопленных «очков размера»
       entity.sizePoints += gained;
-      entity.radius = entity.baseR + Math.sqrt(entity.sizePoints / SCORE_DIVISOR) * GROWTH_FACTOR;
+      const newR = entity.baseR + Math.sqrt(Math.max(0, entity.sizePoints) / SCORE_DIVISOR) * GROWTH_FACTOR;
+      entity.radius = Number.isFinite(newR) ? newR : entity.baseR;
     }
 
     // Штамп лапки если сдвинулись достаточно далеко
@@ -615,8 +615,14 @@
     if (p >= SCORE_TO_WIN || b >= SCORE_TO_WIN || elapsed >= GAME_DURATION) finish();
   }
 
-  function displayScore(raw) { return Math.floor(raw / SCORE_DIVISOR); }
-  function fmt(n) { return n.toLocaleString('ru-RU').replace(/,/g, ' '); }
+  function displayScore(raw) {
+    if (!Number.isFinite(raw)) return 0;
+    return Math.floor(raw / SCORE_DIVISOR);
+  }
+  function fmt(n) {
+    if (!Number.isFinite(n)) return '0';
+    return n.toLocaleString('ru-RU').replace(/,/g, ' ');
+  }
 
   function finish() {
     if (!running) return;
