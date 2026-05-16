@@ -287,10 +287,11 @@
   }
 
   function sampleDarkness(x, y, r) {
-    const sx = Math.max(0, Math.floor(x - r));
-    const sy = Math.max(0, Math.floor(y - r));
-    const w = Math.min(bgCanvas.width - sx, r * 2);
-    const h = Math.min(bgCanvas.height - sy, r * 2);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(r)) return 0;
+    const sx = Math.max(0, Math.floor(x - r)) | 0;
+    const sy = Math.max(0, Math.floor(y - r)) | 0;
+    const w = Math.min(bgCanvas.width - sx, Math.floor(r * 2)) | 0;
+    const h = Math.min(bgCanvas.height - sy, Math.floor(r * 2)) | 0;
     if (w <= 0 || h <= 0) return 0;
     const data = bgCtx.getImageData(sx, sy, w, h).data;
     let sum = 0, count = 0;
@@ -303,10 +304,14 @@
 
   function eat(entity, isPlayer) {
     const r = entity.radius;
-    const sx = Math.max(0, Math.floor(entity.x - r));
-    const sy = Math.max(0, Math.floor(entity.y - r));
-    const w = Math.min(bgCanvas.width - sx, r * 2);
-    const h = Math.min(bgCanvas.height - sy, r * 2);
+    if (!Number.isFinite(entity.x) || !Number.isFinite(entity.y) || !Number.isFinite(r)) {
+      console.warn('[PAC] eat: bad entity', { x: entity.x, y: entity.y, r });
+      return;
+    }
+    const sx = Math.max(0, Math.floor(entity.x - r)) | 0;
+    const sy = Math.max(0, Math.floor(entity.y - r)) | 0;
+    const w = Math.min(bgCanvas.width - sx, Math.floor(r * 2)) | 0;
+    const h = Math.min(bgCanvas.height - sy, Math.floor(r * 2)) | 0;
     if (w <= 0 || h <= 0) return;
 
     const img = bgCtx.getImageData(sx, sy, w, h);
