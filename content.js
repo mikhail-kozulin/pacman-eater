@@ -41,6 +41,180 @@
 
   let currentMode = 'single';
 
+  // ═════════ 🔊 8-BIT АУДИО (без файлов, чистый WebAudio) ═════════
+  let audioCtx = null;
+  function getAudio() {
+    if (!audioCtx) {
+      try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; }
+    }
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    return audioCtx;
+  }
+  function beep(freq, duration, type = 'square', volume = 0.08) {
+    const ctx = getAudio(); if (!ctx) return;
+    try {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.value = freq;
+      gain.gain.value = volume;
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(); osc.stop(ctx.currentTime + duration);
+    } catch (e) {}
+  }
+  function slide(fromFreq, toFreq, duration, type = 'sawtooth', volume = 0.15) {
+    const ctx = getAudio(); if (!ctx) return;
+    try {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(fromFreq, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(toFreq, ctx.currentTime + duration);
+      gain.gain.value = volume;
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(); osc.stop(ctx.currentTime + duration);
+    } catch (e) {}
+  }
+  function playSound(name) {
+    try {
+      switch (name) {
+        case 'eat': beep(180 + Math.random() * 80, 0.04, 'square', 0.04); break;
+        case 'cherry':
+          beep(880, 0.08, 'square', 0.18);
+          setTimeout(() => beep(1320, 0.12, 'square', 0.18), 80);
+          break;
+        case 'death': slide(440, 80, 0.4, 'sawtooth', 0.18); break;
+        case 'win':
+          [523, 659, 784, 1047, 1319].forEach((f, i) => setTimeout(() => beep(f, 0.18, 'square', 0.18), i * 110));
+          break;
+        case 'lose':
+          [523, 415, 330, 220].forEach((f, i) => setTimeout(() => beep(f, 0.25, 'square', 0.15), i * 130));
+          break;
+        case 'countdown': beep(880, 0.08, 'square', 0.12); break;
+        case 'go': [880, 1100, 1320].forEach((f, i) => setTimeout(() => beep(f, 0.1, 'square', 0.15), i * 60)); break;
+      }
+    } catch (e) {}
+  }
+  // 8-битная фоновая мелодия — простой классический мотив, тихо
+  const MELODY = [
+    { f: 659, d: 0.12 }, { f: 784, d: 0.12 }, { f: 659, d: 0.12 }, { f: 523, d: 0.18 },
+    { f: 440, d: 0.12 }, { f: 523, d: 0.12 }, { f: 440, d: 0.12 }, { f: 349, d: 0.20 },
+    { f: 659, d: 0.12 }, { f: 784, d: 0.12 }, { f: 880, d: 0.12 }, { f: 784, d: 0.18 },
+    { f: 698, d: 0.12 }, { f: 587, d: 0.12 }, { f: 523, d: 0.12 }, { f: 392, d: 0.25 },
+    { f: 0,   d: 0.30 },
+  ];
+  let musicPlaying = false;
+  let musicTimer = null;
+  function startMusic() {
+    if (musicPlaying) return;
+    musicPlaying = true;
+    const playLoop = () => {
+      if (!musicPlaying) return;
+      let t = 0;
+      for (const note of MELODY) {
+        if (note.f > 0) {
+          setTimeout(() => { if (musicPlaying) beep(note.f, note.d * 0.9, 'square', 0.03); }, t);
+        }
+        t += note.d * 1000;
+      }
+      musicTimer = setTimeout(playLoop, t);
+    };
+    playLoop();
+  }
+  function stopMusic() {
+    musicPlaying = false;
+    if (musicTimer) { clearTimeout(musicTimer); musicTimer = null; }
+  }
+
+  function catTaunt() {
+    try {
+      if (!('speechSynthesis' in window)) return;
+      const phrases = ['Попался!', 'Хи-хи!', 'Ой-ой!', 'Куда ты?', 'Лови!', 'Ах ты!', 'Мяу!'];
+      const u = new SpeechSynthesisUtterance(phrases[Math.floor(Math.random() * phrases.length)]);
+      u.lang = 'ru-RU'; u.pitch = 1.6; u.rate = 1.25; u.volume = 0.9;
+      speechSynthesis.speak(u);
+    } catch (e) {}
+  }
+
+  // ═════════ 💥 SCREEN SHAKE ═════════
+  let shakeAmount = 0;
+  function triggerShake(amount) { shakeAmount = Math.max(shakeAmount, amount); }
+  function applyShake() {
+    if (!root) return;
+    if (shakeAmount > 0.2) {
+      const dx = (Math.random() - 0.5) * shakeAmount;
+      const dy = (Math.random() - 0.5) * shakeAmount;
+      root.style.transform = `translate(${dx}px, ${dy}px)`;
+      shakeAmount *= 0.82;
+    } else if (shakeAmount > 0) {
+      root.style.transform = '';
+      shakeAmount = 0;
+    }
+  }
+
+  // ═════════ 🍒 ВИШЕНКИ-БОНУСЫ ═════════
+  let cherries = [];
+  let nextCherryAt = 0;
+  function cherryTick() {
+    if (!running) return;
+    const now = performance.now();
+    if (now >= nextCherryAt && cherries.length < MAX_CHERRIES) {
+      cherries.push({
+        x: 40 + Math.random() * (bgCanvas.width - 80),
+        y: 40 + Math.random() * (bgCanvas.height - 80),
+        r: CHERRY_RADIUS, born: now
+      });
+      nextCherryAt = now + CHERRY_SPAWN_MIN + Math.random() * (CHERRY_SPAWN_MAX - CHERRY_SPAWN_MIN);
+    }
+    setTimeout(cherryTick, 600);
+  }
+  function drawCherries(c) {
+    const t = performance.now();
+    for (const ch of cherries) {
+      const pulse = 1 + Math.sin((t - ch.born) / 200) * 0.1;
+      drawCherry(c, ch.x, ch.y, ch.r * pulse);
+    }
+  }
+  function drawCherry(c, x, y, r) {
+    c.save();
+    c.translate(x, y);
+    c.strokeStyle = '#3a7d2c';
+    c.lineWidth = 2.5;
+    c.lineCap = 'round';
+    c.beginPath();
+    c.moveTo(0, -r * 0.4);
+    c.quadraticCurveTo(-r * 0.4, -r * 1.3, -r * 0.55, -r * 0.35);
+    c.moveTo(0, -r * 0.4);
+    c.quadraticCurveTo(r * 0.4, -r * 1.3, r * 0.55, -r * 0.35);
+    c.stroke();
+    for (const [cx, cy] of [[-r * 0.55, r * 0.1], [r * 0.55, r * 0.1]]) {
+      c.fillStyle = '#e63946';
+      c.beginPath(); c.arc(cx, cy, r * 0.6, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = '#000'; c.lineWidth = 2; c.stroke();
+      c.fillStyle = 'rgba(255,255,255,0.5)';
+      c.beginPath(); c.arc(cx - r * 0.2, cy - r * 0.2, r * 0.15, 0, Math.PI * 2); c.fill();
+    }
+    c.restore();
+  }
+  function checkCherryCollision(entity, isPlayer) {
+    for (let i = cherries.length - 1; i >= 0; i--) {
+      const ch = cherries[i];
+      const dx = entity.x - ch.x, dy = entity.y - ch.y;
+      const touchR = entity.radius + ch.r;
+      if (dx*dx + dy*dy < touchR * touchR) {
+        cherries.splice(i, 1);
+        const raw = CHERRY_BONUS * SCORE_DIVISOR;
+        if (isPlayer) scorePlayer += raw; else scoreBot += raw;
+        entity.pixelsEatenTotal += 800;
+        entity.radius = entity.baseR + Math.sqrt(entity.pixelsEatenTotal / 2000) * GROWTH_FACTOR;
+        playSound('cherry');
+        triggerShake(8);
+      }
+    }
+  }
+
   function start(screenshotDataUrl, mode) {
     currentMode = mode;
     const W = window.innerWidth;
@@ -111,6 +285,8 @@
         loop();
         botBrainTick();
         catBrainTick();
+        cherryTick();
+        startMusic();   // 🎵 непрерывная 8-бит фоновая
       });
     };
     screenshotImg.src = screenshotDataUrl;
@@ -130,10 +306,14 @@
 
     let n = COUNTDOWN_SEC;
     const tick = () => {
-      if (n > 0) { overlay.textContent = String(n); n--; setTimeout(tick, 1000); }
-      else {
+      if (n > 0) {
+        overlay.textContent = String(n);
+        playSound('countdown');
+        n--; setTimeout(tick, 1000);
+      } else {
         overlay.textContent = 'GO!';
         overlay.style.color = '#4CFF4C';
+        playSound('go');
         setTimeout(() => { overlay.remove(); onDone(); }, 500);
       }
     };
@@ -253,10 +433,18 @@
       if (player.alive) checkPoopCollision(player);
       if (bot.alive) checkPoopCollision(bot);
 
+      // 🍒 вишенки
+      if (player.alive) checkCherryCollision(player, true);
+      if (bot.alive) checkCherryCollision(bot, false);
+
       // PvP: пакманы могут друг друга съесть
       checkPacmanPvP();
 
+      // 💥 screen shake
+      applyShake();
+
       fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+      drawCherries(fxCtx);
       drawCat(fxCtx, cat.x, cat.y, cat.radius, cat.angle);
       if (player.alive) {
         drawPacman(fxCtx, player.x, player.y, player.radius, player.angle, player.mouth, player.color);
@@ -409,7 +597,14 @@
       }
     }
     // Пишем обратно только если реально что-то поменяли
-    if (pixelsEaten > 0) bgCtx.putImageData(img, sx, sy);
+    if (pixelsEaten > 0) {
+      bgCtx.putImageData(img, sx, sy);
+      // Чавкаем не чаще раза в 200мс на сущность
+      if (!entity._lastEatT || performance.now() - entity._lastEatT > 200) {
+        playSound('eat');
+        entity._lastEatT = performance.now();
+      }
+    }
     if (pixelsEaten > 0 && Number.isFinite(gained)) {
       areaEaten += pixelsEaten;
       if (isPlayer) scorePlayer += gained;
@@ -640,6 +835,7 @@
       const dx = entity.x - p.x, dy = entity.y - p.y;
       const collisionR = entity.radius * 0.5 + p.r * 0.5;
       if (dx*dx + dy*dy < collisionR * collisionR) {
+        catTaunt();  // 🐱 "Попался!"
         die(entity);
         return;
       }
@@ -654,6 +850,8 @@
     entity.radius = entity.baseR;
     entity.dx = 0;
     entity.dy = 0;
+    playSound('death');
+    triggerShake(18);
   }
 
   function checkRespawn(entity) {
@@ -772,9 +970,17 @@
     const b = displayScore(scoreBot);
     const isPair = (currentMode === 'pair');
     let winner;
-    if (p === b) winner = '🤝 Ничья';
-    else if (isPair) winner = p > b ? '🟡 Игрок 1 победил!' : '🔴 Игрок 2 победил!';
-    else winner = p > b ? '🟡 Ты победил!' : '🤖 Бот победил';
+    stopMusic();
+    if (p === b) { winner = '🤝 Ничья'; }
+    else if (isPair) {
+      winner = p > b ? '🟡 Игрок 1 победил!' : '🔴 Игрок 2 победил!';
+      playSound('win');
+    }
+    else {
+      winner = p > b ? '🟡 Ты победил!' : '🤖 Бот победил';
+      playSound(p > b ? 'win' : 'lose');
+    }
+    triggerShake(25);
     const banner = document.createElement('div');
     Object.assign(banner.style, {
       position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
@@ -798,6 +1004,7 @@
   function stop() {
     running = false;
     movingAllowed = false;
+    stopMusic();
     if (rafId) cancelAnimationFrame(rafId);
     window.removeEventListener('keydown', onKey, true);
     window.removeEventListener('keyup', onKeyUp, true);
