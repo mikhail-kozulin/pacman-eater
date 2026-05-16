@@ -27,7 +27,7 @@
   // ─── Фоновый 2: маленькие пакманы делятся ───
   const BG2_START_RADIUS = 2;            // в 3 раза меньше (было 6) — рой мелочи
   const BG2_BASE_SPEED = 2.6;            // +30% (было 2.0)
-  const BG2_SPLIT_PIXELS = 4000;
+  const BG2_SPLIT_PIXELS = 200;          // мелкий пакман жрёт ~6px/кадр → ~0.5с до сплита
   const BG2_MAX_BOTS = Infinity;         // без потолка — плодятся пока есть еда
   const BG2_PALETTE = [
     ['#FFCC00', '#FFEE77'], ['#FF4444', '#FF99BB'],
