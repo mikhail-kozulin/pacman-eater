@@ -3,19 +3,44 @@
 <head>
   <meta charset="utf-8">
   <style>
-    body { width: 220px; font-family: -apple-system, sans-serif; padding: 12px; margin: 0; }
-    h3 { margin: 0 0 8px 0; font-size: 14px; }
-    p { margin: 0 0 12px 0; font-size: 12px; color: #555; line-height: 1.4; }
-    button { width: 100%; padding: 10px; border: 0; background: #FFCC00; color: #000; font-weight: 600; border-radius: 6px; cursor: pointer; font-size: 13px; }
-    button:hover { background: #ffd633; }
-    .hint { margin-top: 10px; font-size: 11px; color: #888; }
+    body { width: 260px; font-family: -apple-system, sans-serif; padding: 12px; margin: 0; }
+    h3 { margin: 0 0 10px 0; font-size: 14px; }
+    .modes { display: flex; flex-direction: column; gap: 6px; }
+    button {
+      width: 100%; padding: 10px 12px; border: 0; border-radius: 6px;
+      cursor: pointer; font-size: 13px; font-weight: 600; text-align: left;
+      display: flex; align-items: center; gap: 8px;
+      transition: transform 0.05s;
+    }
+    button:hover { transform: translateY(-1px); }
+    button:active { transform: translateY(0); }
+    .single { background: #FFCC00; color: #000; }
+    .single:hover { background: #ffd633; }
+    .pair { background: #4488FF; color: #fff; }
+    .pair:hover { background: #5599ff; }
+    .bg { background: #1a1a2e; color: #fff; }
+    .bg:hover { background: #2a2a3e; }
+    .hint { margin-top: 10px; font-size: 11px; color: #888; line-height: 1.4; }
+    .desc { font-size: 11px; font-weight: 400; opacity: 0.8; display: block; margin-top: 2px; }
   </style>
 </head>
 <body>
   <h3>🟡 Pacman Eater</h3>
-  <p>Сожри интерфейс этого сайта раньше бота.</p>
-  <button id="start">Запустить пакмана</button>
-  <div class="hint">Управление: WASD или ← ↑ → ↓ &nbsp;·&nbsp; Esc — выход</div>
+  <div class="modes">
+    <button class="single" data-mode="single">
+      <span>🎯 Соло</span>
+      <span class="desc">Ты vs бот</span>
+    </button>
+    <button class="pair" data-mode="pair">
+      <span>👯 Парный</span>
+      <span class="desc">WASD vs стрелки на одном компе</span>
+    </button>
+    <button class="bg" data-mode="background">
+      <span>🌙 Фоновый</span>
+      <span class="desc">Боты сами жрут пока ты отошёл</span>
+    </button>
+  </div>
+  <div class="hint">Esc — выход в любой момент</div>
   <script src="popup.js"></script>
 </body>
 </html>

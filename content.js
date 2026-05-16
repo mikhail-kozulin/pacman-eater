@@ -33,7 +33,10 @@
   let startedAt = 0;
   let rafId = null;
 
-  function start(screenshotDataUrl) {
+  let currentMode = 'single';
+
+  function start(screenshotDataUrl, mode) {
+    currentMode = mode;
     const W = window.innerWidth;
     const H = window.innerHeight;
     totalArea = W * H;
@@ -72,12 +75,16 @@
       fontWeight: '600', display: 'flex', gap: '20px', alignItems: 'center',
       pointerEvents: 'none'
     });
+    const isPair = (currentMode === 'pair');
+    const p1Label = isPair ? '🟡 P1' : '🟡';
+    const p2Label = isPair ? '🔴 P2' : '🤖';
+    const ctrlHint = isPair ? 'P1: WASD &nbsp;·&nbsp; P2: ← ↑ → ↓' : 'WASD / ← ↑ → ↓';
     hud.innerHTML = `
-      <span style="color:#FFCC00">🟡 <span data-pac="player">0</span></span>
-      <span style="color:#FF4444">🤖 <span data-pac="bot">0</span></span>
+      <span style="color:#FFCC00">${p1Label} <span data-pac="player">0</span></span>
+      <span style="color:#FF4444">${p2Label} <span data-pac="bot">0</span></span>
       <span style="color:#aaa">цель <b style="color:#fff">${SCORE_TO_WIN}</b></span>
       <span style="color:#aaa">⏱ <span data-pac="time">120</span>с</span>
-      <span style="color:#888;font-weight:400;font-size:11px">WASD / ← ↑ → ↓ &nbsp;·&nbsp; Esc</span>
+      <span style="color:#888;font-weight:400;font-size:11px">${ctrlHint} &nbsp;·&nbsp; Esc</span>
     `;
     root.appendChild(hud);
     // Прямые ссылки на элементы HUD — querySelector внутри hud, надёжнее чем getElementById
@@ -153,6 +160,9 @@
     player = makeEntity(W * 0.2, H * 0.5, '#FFCC00', '#6B4F1D');
     bot    = makeEntity(W * 0.8, H * 0.5, '#FF4444', '#8B0000');
     bot.angle = Math.PI;
+    // В парном режиме "bot" становится человеком №2 (на стрелках).
+    // Доп. поле isHuman2 — на этом завязан updateBot (вместо AI читает клавиши).
+    bot.isHuman2 = (currentMode === 'pair');
 
     // NPC-кот: серый, чёрные лапки, какает, нельзя его съесть
     // Стартует с РАНДОМНЫМ направлением чтоб не было статичен на старте
@@ -178,22 +188,41 @@
     window.addEventListener('keyup', onKeyUp, true);
   }
 
-  const KEYMAP = {
-    'ArrowLeft': 'left', 'ArrowRight': 'right', 'ArrowUp': 'up', 'ArrowDown': 'down',
+  // WASD/ЦФЫВ — игрок 1, стрелки — игрок 2 (только в pair)
+  // В соло — оба маппинга работают на player.
+  const WASD_MAP = {
     'a': 'left', 'd': 'right', 'w': 'up', 's': 'down',
     'A': 'left', 'D': 'right', 'W': 'up', 'S': 'down',
     'ф': 'left', 'в': 'right', 'ц': 'up', 'ы': 'down',
     'Ф': 'left', 'В': 'right', 'Ц': 'up', 'Ы': 'down',
   };
+  const ARROW_MAP = {
+    'ArrowLeft': 'left', 'ArrowRight': 'right', 'ArrowUp': 'up', 'ArrowDown': 'down',
+  };
+  let keys2 = { left: false, right: false, up: false, down: false };
 
   function onKey(e) {
     if (e.key === 'Escape') { stop(); e.preventDefault(); return; }
-    const dir = KEYMAP[e.key];
-    if (dir) { keys[dir] = true; e.preventDefault(); e.stopPropagation(); }
+    const wasd = WASD_MAP[e.key];
+    const arr  = ARROW_MAP[e.key];
+    if (currentMode === 'pair') {
+      if (wasd) { keys[wasd]  = true; e.preventDefault(); e.stopPropagation(); }
+      if (arr)  { keys2[arr]  = true; e.preventDefault(); e.stopPropagation(); }
+    } else {
+      const dir = wasd || arr;
+      if (dir) { keys[dir] = true; e.preventDefault(); e.stopPropagation(); }
+    }
   }
   function onKeyUp(e) {
-    const dir = KEYMAP[e.key];
-    if (dir && keys[dir]) { keys[dir] = false; e.preventDefault(); e.stopPropagation(); }
+    const wasd = WASD_MAP[e.key];
+    const arr  = ARROW_MAP[e.key];
+    if (currentMode === 'pair') {
+      if (wasd) { keys[wasd]  = false; e.preventDefault(); e.stopPropagation(); }
+      if (arr)  { keys2[arr]  = false; e.preventDefault(); e.stopPropagation(); }
+    } else {
+      const dir = wasd || arr;
+      if (dir) { keys[dir] = false; e.preventDefault(); e.stopPropagation(); }
+    }
   }
 
   let loopFrame = 0;
@@ -254,12 +283,29 @@
   }
 
   function updateBot() {
+    // В парном режиме bot — это второй человек на стрелках
+    if (bot.isHuman2) {
+      let dx = 0, dy = 0;
+      if (keys2['left']) dx -= 1;
+      if (keys2['right']) dx += 1;
+      if (keys2['up']) dy -= 1;
+      if (keys2['down']) dy += 1;
+      if (dx || dy) {
+        const len = Math.hypot(dx, dy);
+        bot.dx = (dx / len) * SPEED;
+        bot.dy = (dy / len) * SPEED;
+        bot.angle = Math.atan2(bot.dy, bot.dx);
+      } else { bot.dx = 0; bot.dy = 0; }
+      bot.mouth = (bot.mouth + 0.2) % (Math.PI * 2);
+    }
     bot.x = clamp(bot.x + bot.dx, bot.radius, bgCanvas.width - bot.radius);
     bot.y = clamp(bot.y + bot.dy, bot.radius, bgCanvas.height - bot.radius);
   }
 
   function botBrainTick() {
     if (!running) return;
+    // В парном режиме бот не нужен — управляется человеком
+    if (bot.isHuman2) { setTimeout(botBrainTick, SCAN_INTERVAL); return; }
     if (!bot.alive) { setTimeout(botBrainTick, SCAN_INTERVAL); return; }
     const directions = [];
     const SCAN_DIST = 90;
@@ -669,7 +715,11 @@
     running = false;
     const p = displayScore(scorePlayer);
     const b = displayScore(scoreBot);
-    const winner = p > b ? '🟡 Ты победил!' : (p === b ? '🤝 Ничья' : '🤖 Бот победил');
+    const isPair = (currentMode === 'pair');
+    let winner;
+    if (p === b) winner = '🤝 Ничья';
+    else if (isPair) winner = p > b ? '🟡 Игрок 1 победил!' : '🔴 Игрок 2 победил!';
+    else winner = p > b ? '🟡 Ты победил!' : '🤖 Бот победил';
     const banner = document.createElement('div');
     Object.assign(banner.style, {
       position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
@@ -703,6 +753,6 @@
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
   chrome.runtime.onMessage.addListener((msg) => {
-    if (msg.type === 'START_PACMAN') start(msg.screenshot);
+    if (msg.type === 'START_PACMAN') start(msg.screenshot, msg.mode || 'single');
   });
 })();
