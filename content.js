@@ -823,7 +823,7 @@
 
   const IDLE_MS = 3000;            // 3с без активности → котик появляется (просьба Михаила)
   const IDLE_CHECK_MS = 400;
-  const CAT_SPEED = 2.6;
+  const CAT_SPEED = 3.9;           // +50% (было 2.6)
   const CAT_R = 34;
   const Z_TOP = '2147483647';
   const ACT_EVENTS = ['mousemove', 'mousedown', 'mouseup', 'click', 'keydown', 'wheel', 'touchstart', 'touchmove'];
