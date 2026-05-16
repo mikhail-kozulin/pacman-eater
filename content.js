@@ -245,6 +245,9 @@
       if (player.alive) checkPoopCollision(player);
       if (bot.alive) checkPoopCollision(bot);
 
+      // PvP: пакманы могут друг друга съесть
+      checkPacmanPvP();
+
       fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
       drawCat(fxCtx, cat.x, cat.y, cat.radius, cat.angle);
       if (player.alive) {
@@ -579,6 +582,40 @@
     pawCtx.ellipse(-1, -3, 2.5, 1.5, 0, 0, Math.PI * 2);
     pawCtx.fill();
     pawCtx.restore();
+  }
+
+  // PvP: пакманы трогаются → больший ест меньшего ИЛИ кто наступает агрессивнее тот и ест.
+  // Лоб в лоб → отскок.
+  function checkPacmanPvP() {
+    if (!player.alive || !bot.alive) return;
+    const dx = bot.x - player.x;
+    const dy = bot.y - player.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    const touchDist = (player.radius + bot.radius) * 0.85;
+    if (dist >= touchDist || dist < 0.001) return;
+
+    const sizeDiff = player.radius - bot.radius;
+    // Сильно больше = съел
+    if (sizeDiff > 4) { die(bot); return; }
+    if (sizeDiff < -4) { die(player); return; }
+
+    // Близкие размеры — решает направление подхода
+    const playerApproach = (player.dx * dx + player.dy * dy) / dist;
+    const botApproach   = -(bot.dx * dx + bot.dy * dy) / dist;
+
+    if (playerApproach > botApproach + 0.8) {
+      die(bot);
+    } else if (botApproach > playerApproach + 0.8) {
+      die(player);
+    } else {
+      // Лоб в лоб или скользящее касание — отскок
+      const overlap = touchDist - dist + 1;
+      const nx = dx / dist, ny = dy / dist;
+      player.x = clamp(player.x - nx * overlap / 2, player.radius, bgCanvas.width - player.radius);
+      player.y = clamp(player.y - ny * overlap / 2, player.radius, bgCanvas.height - player.radius);
+      bot.x = clamp(bot.x + nx * overlap / 2, bot.radius, bgCanvas.width - bot.radius);
+      bot.y = clamp(bot.y + ny * overlap / 2, bot.radius, bgCanvas.height - bot.radius);
+    }
   }
 
   function checkPoopCollision(entity) {
